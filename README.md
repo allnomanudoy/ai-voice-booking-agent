@@ -43,7 +43,7 @@ Caller  →  VAPI (AI voice, natural conversation)
 ## Connect with me
 
 I build these for businesses that want to stop missing after-hours calls.
-LinkedIn: *[add your LinkedIn URL here]*
+LinkedIn: [Md. All Noman Udoy](https://www.linkedin.com/in/md-all-noman-udoy-7b8011252/)
 
 ## License
 
