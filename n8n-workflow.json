@@ -1,0 +1,1441 @@
+{
+  "name": "VAPI Booking - Production",
+  "nodes": [
+    {
+      "id": "webhook",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        -900,
+        0
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "vapi-booking",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "webhookId": "vapi-booking"
+    },
+    {
+      "id": "is_tool-calls_event?",
+      "name": "Is tool-calls event?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        -700,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.message.message.type }}",
+              "rightValue": "tool-calls",
+              "operator": {
+                "type": "equal",
+                "operation": "equal"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "prep_context",
+      "name": "Prep context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        -500,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "p1",
+              "name": "action",
+              "type": "string",
+              "value": "={{ $json.message.message.toolCallList[0].function.name }}"
+            },
+            {
+              "id": "p2",
+              "name": "toolCallId",
+              "type": "string",
+              "value": "={{ $json.message.message.toolCallList[0].id }}"
+            },
+            {
+              "id": "p3",
+              "name": "args",
+              "type": "object",
+              "value": "={{ $json.message.message.toolCallList[0].function.arguments }}"
+            },
+            {
+              "id": "p4",
+              "name": "rawPayload",
+              "type": "string",
+              "value": "={{ JSON.stringify($json) }}"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "log_call_to_airtable",
+      "name": "Log call to Airtable",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        -300,
+        250
+      ],
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "appYOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "CallLogs"
+        },
+        "operation": "create",
+        "fields": {
+          "fields": [
+            {
+              "name": "Call ID",
+              "value": "={{ $json.toolCallId }}"
+            },
+            {
+              "name": "Tool",
+              "value": "={{ $json.action }}"
+            },
+            {
+              "name": "Payload",
+              "value": "={{ $json.rawPayload }}"
+            },
+            {
+              "name": "Success",
+              "value": true
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "switch_by_tool",
+      "name": "Switch by tool",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "parameters": {
+        "dataType": "string",
+        "value1": "={{ $json.action }}",
+        "rules": {
+          "values": [
+            {
+              "value1": "check_availability",
+              "outputKey": "check_availability"
+            },
+            {
+              "value1": "book_room",
+              "outputKey": "book_room"
+            },
+            {
+              "value1": "modify_booking",
+              "outputKey": "modify_booking"
+            },
+            {
+              "value1": "cancel_booking",
+              "outputKey": "cancel_booking"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "av_lookup_room",
+      "name": "AV Lookup room",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        200,
+        -500
+      ],
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "appYOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Rooms"
+        },
+        "operation": "list",
+        "options": {
+          "filterByFormula": "{Room Name} = '{{ $json.args.room_type }}'"
+        }
+      }
+    },
+    {
+      "id": "av_merge_context",
+      "name": "AV Merge context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        400,
+        -500
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m1",
+              "name": "ctx",
+              "type": "object",
+              "value": "={{ $('Prep context').first().json }}"
+            },
+            {
+              "id": "m2",
+              "name": "roomRecId",
+              "type": "string",
+              "value": "={{ $json.records.length > 0 ? $json.records[0].id : '' }}"
+            }
+          ]
+        },
+        "options": {
+          "keepExisting": true
+        }
+      }
+    },
+    {
+      "id": "av_check_overlapping_bookings",
+      "name": "AV Check overlapping bookings",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        600,
+        -500
+      ],
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "appYOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Bookings"
+        },
+        "operation": "list",
+        "options": {
+          "filterByFormula": "AND({Status}='confirmed', {Room}='{{ $json.roomRecId }}', {Check-in} < '{{ $json.ctx.args.check_out }}', {Check-out} > '{{ $json.ctx.args.check_in }}')"
+        }
+      }
+    },
+    {
+      "id": "av_build_response",
+      "name": "AV Build response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        800,
+        -500
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx || {};\nconst rawArgs = ctx.args || {};\nconst args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;\nconst room = args.room_type || '';\nconst roomRecId = $json.roomRecId || '';\nif (!roomRecId) {\n  return [{ json: { success: true, toolCallId: ctx.toolCallId,\n    spoken_response: \"I don't recognize that room type. We offer Queen, King, and Suite rooms — which would you like?\" } }];\n}\nconst bookings = ($json.records || []).filter(r => r.fields && r.fields.Status === 'confirmed');\nconst available = bookings.length === 0;\nconst spoken = available\n  ? `Yes, we have a ${room} available for ${args.check_in} to ${args.check_out}. Would you like me to book it?`\n  : `I'm sorry, the ${room} is taken for those dates. Would a different room type or dates work?`;\nreturn [{ json: { success: true, toolCallId: ctx.toolCallId, spoken_response: spoken, available: available } }];"
+      }
+    },
+    {
+      "id": "bk_check_existing_booking",
+      "name": "BK Check existing booking",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        200,
+        0
+      ],
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "appYOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Bookings"
+        },
+        "operation": "list",
+        "options": {
+          "filterByFormula": "AND({Status}='confirmed', {Phone}='{{ $json.args.phone }}')"
+        }
+      }
+    },
+    {
+      "id": "bk_merge_context",
+      "name": "BK Merge context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        400,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m6",
+              "name": "ctx",
+              "type": "object",
+              "value": "={{ $('Prep context').first().json }}"
+            }
+          ]
+        },
+        "options": {
+          "keepExisting": true
+        }
+      }
+    },
+    {
+      "id": "bk_idempotency_check",
+      "name": "BK Idempotency check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        0
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx || {};\nconst rawArgs = ctx.args || {};\nconst args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;\nconst existing = ($json.records || []).filter(r => r.fields && r.fields.Status === 'confirmed');\nif (existing.length > 0) {\n  const b = existing[0];\n  const ref = (b.fields && b.fields['Booking ID']) || b.id;\n  return [{ json: { success: true, toolCallId: ctx.toolCallId, booking_id: ref,\n    spoken_response: `You already have a confirmed booking (${ref}) for ${args.check_in} to ${args.check_out}. I won't create a duplicate.` } }];\n}\nreturn [{ json: { proceed: true, toolCallId: ctx.toolCallId, args: args } }];"
+      }
+    },
+    {
+      "id": "bk_already_booked?",
+      "name": "BK Already booked?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        800,
+        0
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.proceed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "bk_lookup_room",
+      "name": "BK Lookup room",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        -150
+      ],
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "appYOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Rooms"
+        },
+        "operation": "list",
+        "options": {
+          "filterByFormula": "{Room Name} = '{{ $json.args.room_type }}'"
+        }
+      }
+    },
+    {
+      "id": "bk_merge_room_data",
+      "name": "BK Merge room data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        -150
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m3",
+              "name": "ctx",
+              "type": "object",
+              "value": "={{ $('Prep context').first().json }}"
+            },
+            {
+              "id": "m4",
+              "name": "rate",
+              "type": "number",
+              "value": "={{ $json.records.length > 0 ? $json.records[0].fields['Nightly Rate'] : 0 }}"
+            },
+            {
+              "id": "m5",
+              "name": "roomRecId",
+              "type": "string",
+              "value": "={{ $json.records.length > 0 ? $json.records[0].id : '' }}"
+            }
+          ]
+        },
+        "options": {
+          "keepExisting": true
+        }
+      }
+    },
+    {
+      "id": "bk_compute_price_+_fields",
+      "name": "BK Compute price + fields",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        -150
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx || {};\nconst rawArgs = ctx.args || {};\nconst args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;\nconst rate = Number($json.rate || 0);\nconst roomRecId = $json.roomRecId || '';\nif (!roomRecId) {\n  return [{ json: { success: false, toolCallId: ctx.toolCallId,\n    spoken_response: \"I couldn't find that room type in our system. We offer Queen, King, and Suite rooms.\" } }];\n}\nconst checkIn = args.check_in, checkOut = args.check_out;\nconst nights = Math.max(1, Math.round((new Date(checkOut) - new Date(checkIn)) / 86400000));\nconst total = nights * rate;\nconst rawPhone = String(args.phone || '').replace(/\\D/g, '');\n// NOTE: adjust the default country code to the hotel's locale (US=+1, TW=+886, CN=+86...)\nconst phone = rawPhone.length === 10 ? '+1' + rawPhone : '+' + rawPhone;\nconst fields = {\n  'Guest Name': args.guest_name,\n  'Phone': phone,\n  'Check-in': checkIn,\n  'Check-out': checkOut,\n  'Room': [roomRecId],\n  'Guests': Number(args.guests || 1),\n  'Status': 'confirmed',\n  'Total Price': total\n};\nreturn [{ json: { toolCallId: ctx.toolCallId, fields: fields, nights: nights, total: total } }];"
+      }
+    },
+    {
+      "id": "bk_create_booking",
+      "name": "BK Create booking",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        1600,
+        -150
+      ],
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "appYOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Bookings"
+        },
+        "operation": "create",
+        "fields": {
+          "fields": [
+            {
+              "name": "Guest Name",
+              "value": "={{ $json.fields['Guest Name'] }}"
+            },
+            {
+              "name": "Phone",
+              "value": "={{ $json.fields['Phone'] }}"
+            },
+            {
+              "name": "Check-in",
+              "value": "={{ $json.fields['Check-in'] }}"
+            },
+            {
+              "name": "Check-out",
+              "value": "={{ $json.fields['Check-out'] }}"
+            },
+            {
+              "name": "Room",
+              "value": "={{ $json.fields['Room'] }}"
+            },
+            {
+              "name": "Guests",
+              "value": "={{ $json.fields['Guests'] }}"
+            },
+            {
+              "name": "Status",
+              "value": "={{ $json.fields['Status'] }}"
+            },
+            {
+              "name": "Total Price",
+              "value": "={{ $json.fields['Total Price'] }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bk_merge_created",
+      "name": "BK Merge created",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1800,
+        -150
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m7",
+              "name": "ctx",
+              "type": "object",
+              "value": "={{ $('Prep context').first().json }}"
+            }
+          ]
+        },
+        "options": {
+          "keepExisting": true
+        }
+      }
+    },
+    {
+      "id": "bk_confirm",
+      "name": "BK Confirm",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2000,
+        -150
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx || {};\nconst created = $json;\nconst id = created.id || '';\nconst f = created.fields || {};\nreturn [{ json: { success: true, toolCallId: ctx.toolCallId, booking_id: id,\n  spoken_response: `Confirmed, ${f['Guest Name'] || 'there'}. Your room for ${f['Check-in']} to ${f['Check-out']} is booked (ref ${id}). Total ${f['Total Price']}.` } }];"
+      }
+    },
+    {
+      "id": "mo_find_booking",
+      "name": "MO Find booking",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        200,
+        300
+      ],
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "appYOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Bookings"
+        },
+        "operation": "list",
+        "options": {
+          "filterByFormula": "AND({Status}='confirmed', {Phone}='{{ $json.args.phone }}')"
+        }
+      }
+    },
+    {
+      "id": "mo_merge_context",
+      "name": "MO Merge context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        400,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m8",
+              "name": "ctx",
+              "type": "object",
+              "value": "={{ $('Prep context').first().json }}"
+            }
+          ]
+        },
+        "options": {
+          "keepExisting": true
+        }
+      }
+    },
+    {
+      "id": "mo_pick_booking",
+      "name": "MO Pick booking",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx || {};\nconst rawArgs = ctx.args || {};\nconst args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;\nconst confirmed = ($json.records || []).filter(r => r.fields && r.fields.Status === 'confirmed');\nif (confirmed.length === 0) {\n  return [{ json: { success: false, toolCallId: ctx.toolCallId,\n    spoken_response: \"I couldn't find a confirmed booking for that number. Could you double-check it?\" } }];\n}\nconst b = confirmed[0];\nconst updateFields = {};\nif (args.new_check_in) updateFields['Check-in'] = args.new_check_in;\nif (args.new_check_out) updateFields['Check-out'] = args.new_check_out;\nupdateFields['Status'] = 'modified';\nconst note = args.new_room_type ? \" Room changes go through our front desk, so I've only updated your dates.\" : \"\";\nreturn [{ json: { proceed: true, toolCallId: ctx.toolCallId, bookingRecId: b.id,\n                  updateFields: updateFields, note: note } }];"
+      }
+    },
+    {
+      "id": "mo_found?",
+      "name": "MO Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        800,
+        300
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.proceed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "mo_update_booking",
+      "name": "MO Update booking",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        300
+      ],
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "appYOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Bookings"
+        },
+        "operation": "update",
+        "id": "={{ $json.bookingRecId }}",
+        "fields": {
+          "fields": [
+            {
+              "name": "Check-in",
+              "value": "={{ $json.updateFields['Check-in'] }}"
+            },
+            {
+              "name": "Check-out",
+              "value": "={{ $json.updateFields['Check-out'] }}"
+            },
+            {
+              "name": "Status",
+              "value": "={{ $json.updateFields['Status'] }}"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "mo_merge_updated",
+      "name": "MO Merge updated",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        300
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m9",
+              "name": "ctx",
+              "type": "object",
+              "value": "={{ $('Prep context').first().json }}"
+            },
+            {
+              "id": "m10",
+              "name": "note",
+              "type": "string",
+              "value": "={{ $json.note }}"
+            }
+          ]
+        },
+        "options": {
+          "keepExisting": true
+        }
+      }
+    },
+    {
+      "id": "mo_confirm",
+      "name": "MO Confirm",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        300
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx || {};\nconst note = $json.note || '';\nreturn [{ json: { success: true, toolCallId: ctx.toolCallId, booking_id: $json.id || '',\n  spoken_response: `Your booking is updated.${note} Anything else I can help with?` } }];"
+      }
+    },
+    {
+      "id": "ca_find_booking",
+      "name": "CA Find booking",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        200,
+        600
+      ],
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "appYOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Bookings"
+        },
+        "operation": "list",
+        "options": {
+          "filterByFormula": "AND({Status}='confirmed', {Phone}='{{ $json.args.phone }}')"
+        }
+      }
+    },
+    {
+      "id": "ca_merge_context",
+      "name": "CA Merge context",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        400,
+        600
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m11",
+              "name": "ctx",
+              "type": "object",
+              "value": "={{ $('Prep context').first().json }}"
+            }
+          ]
+        },
+        "options": {
+          "keepExisting": true
+        }
+      }
+    },
+    {
+      "id": "ca_pick_booking",
+      "name": "CA Pick booking",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        600,
+        600
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx || {};\nconst rawArgs = ctx.args || {};\nconst args = typeof rawArgs === 'string' ? JSON.parse(rawArgs) : rawArgs;\nconst confirmed = ($json.records || []).filter(r => r.fields && r.fields.Status === 'confirmed');\nif (confirmed.length === 0) {\n  return [{ json: { success: false, toolCallId: ctx.toolCallId,\n    spoken_response: \"I couldn't find a confirmed booking for that number. Could you double-check it?\" } }];\n}\nreturn [{ json: { proceed: true, toolCallId: ctx.toolCallId, bookingRecId: confirmed[0].id } }];"
+      }
+    },
+    {
+      "id": "ca_found?",
+      "name": "CA Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [
+        800,
+        600
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.proceed }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "ca_cancel_booking",
+      "name": "CA Cancel booking",
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 1,
+      "position": [
+        1000,
+        600
+      ],
+      "parameters": {
+        "base": {
+          "__rl": true,
+          "mode": "id",
+          "value": "appYOUR_BASE_ID"
+        },
+        "table": {
+          "__rl": true,
+          "mode": "id",
+          "value": "Bookings"
+        },
+        "operation": "update",
+        "id": "={{ $json.bookingRecId }}",
+        "fields": {
+          "fields": [
+            {
+              "name": "Status",
+              "value": "cancelled"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "ca_merge_updated",
+      "name": "CA Merge updated",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        1200,
+        600
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "m12",
+              "name": "ctx",
+              "type": "object",
+              "value": "={{ $('Prep context').first().json }}"
+            }
+          ]
+        },
+        "options": {
+          "keepExisting": true
+        }
+      }
+    },
+    {
+      "id": "ca_confirm",
+      "name": "CA Confirm",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1400,
+        600
+      ],
+      "parameters": {
+        "jsCode": "const ctx = $json.ctx || {};\nreturn [{ json: { success: true, toolCallId: ctx.toolCallId, booking_id: $json.id || '',\n  spoken_response: \"Done — your booking is cancelled. Sorry to lose you; hope to see you another time.\" } }];"
+      }
+    },
+    {
+      "id": "error_trigger",
+      "name": "Error Trigger",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        400
+      ]
+    },
+    {
+      "id": "error_response",
+      "name": "Error response",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        2400,
+        400
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e1",
+              "name": "success",
+              "type": "boolean",
+              "value": false
+            },
+            {
+              "id": "e2",
+              "name": "toolCallId",
+              "type": "string",
+              "value": "={{ $('Prep context').first().json.toolCallId || '' }}"
+            },
+            {
+              "id": "e3",
+              "name": "spoken_response",
+              "type": "string",
+              "value": "I'm sorry, I'm having trouble with our system right now. Let me take your number and we'll call you back shortly."
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "respond_to_webhook_error",
+      "name": "Respond to Webhook (error)",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2600,
+        400
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ ({ results: [{ toolCallId: $json.toolCallId, result: { success: $json.success, spoken_response: $json.spoken_response } }] }) }}"
+      }
+    },
+    {
+      "id": "unknown_intent_fallback",
+      "name": "Unknown intent fallback",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [
+        200,
+        900
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f1",
+              "name": "success",
+              "type": "boolean",
+              "value": false
+            },
+            {
+              "id": "f2",
+              "name": "toolCallId",
+              "type": "string",
+              "value": "={{ $('Prep context').first().json.toolCallId }}"
+            },
+            {
+              "id": "f3",
+              "name": "spoken_response",
+              "type": "string",
+              "value": "I'm sorry, I didn't catch that. Could you say that again?"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "respond_to_webhook",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [
+        2200,
+        0
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ ({ results: [{ toolCallId: $json.toolCallId, result: { success: $json.success, spoken_response: $json.spoken_response, booking_id: $json.booking_id } }] }) }}"
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Is tool-calls event?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is tool-calls event?": {
+      "main": [
+        [
+          {
+            "node": "Prep context",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Prep context": {
+      "main": [
+        [
+          {
+            "node": "Log call to Airtable",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Switch by tool",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log call to Airtable": {
+      "main": [
+        []
+      ]
+    },
+    "Switch by tool": {
+      "main": [
+        [
+          {
+            "node": "AV Lookup room",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "BK Check existing booking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "MO Find booking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "CA Find booking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unknown intent fallback",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AV Lookup room": {
+      "main": [
+        [
+          {
+            "node": "AV Merge context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AV Merge context": {
+      "main": [
+        [
+          {
+            "node": "AV Check overlapping bookings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AV Check overlapping bookings": {
+      "main": [
+        [
+          {
+            "node": "AV Build response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AV Build response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BK Check existing booking": {
+      "main": [
+        [
+          {
+            "node": "BK Merge context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BK Merge context": {
+      "main": [
+        [
+          {
+            "node": "BK Idempotency check",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BK Idempotency check": {
+      "main": [
+        [
+          {
+            "node": "BK Already booked?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BK Already booked?": {
+      "main": [
+        [
+          {
+            "node": "BK Lookup room",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BK Lookup room": {
+      "main": [
+        [
+          {
+            "node": "BK Merge room data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BK Merge room data": {
+      "main": [
+        [
+          {
+            "node": "BK Compute price + fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BK Compute price + fields": {
+      "main": [
+        [
+          {
+            "node": "BK Create booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BK Create booking": {
+      "main": [
+        [
+          {
+            "node": "BK Merge created",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BK Merge created": {
+      "main": [
+        [
+          {
+            "node": "BK Confirm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "BK Confirm": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MO Find booking": {
+      "main": [
+        [
+          {
+            "node": "MO Merge context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MO Merge context": {
+      "main": [
+        [
+          {
+            "node": "MO Pick booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MO Pick booking": {
+      "main": [
+        [
+          {
+            "node": "MO Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MO Found?": {
+      "main": [
+        [
+          {
+            "node": "MO Update booking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MO Update booking": {
+      "main": [
+        [
+          {
+            "node": "MO Merge updated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MO Merge updated": {
+      "main": [
+        [
+          {
+            "node": "MO Confirm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "MO Confirm": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CA Find booking": {
+      "main": [
+        [
+          {
+            "node": "CA Merge context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CA Merge context": {
+      "main": [
+        [
+          {
+            "node": "CA Pick booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CA Pick booking": {
+      "main": [
+        [
+          {
+            "node": "CA Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CA Found?": {
+      "main": [
+        [
+          {
+            "node": "CA Cancel booking",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CA Cancel booking": {
+      "main": [
+        [
+          {
+            "node": "CA Merge updated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CA Merge updated": {
+      "main": [
+        [
+          {
+            "node": "CA Confirm",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "CA Confirm": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unknown intent fallback": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook": {
+      "main": [
+        []
+      ]
+    },
+    "Error Trigger": {
+      "main": [
+        [
+          {
+            "node": "Error response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Error response": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook (error)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Respond to Webhook (error)": {
+      "main": [
+        []
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "version": 1
+}
