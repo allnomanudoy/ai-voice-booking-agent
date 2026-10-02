@@ -35,7 +35,7 @@ Caller  →  VAPI (AI voice, natural conversation)
 5. Call your number.
 
 ## Why this stack
-
+`n8n-workflow.json` | Production n8n workflow: availability check, idempotent booking with price calc, modify, cancel, call logging + error handling
 - **VAPI** — handles the actual phone call and natural voice.
 - **n8n** — visual automation; every step inspectable, no-code.
 - **Airtable** — spreadsheet-simple database your client can actually use.
